@@ -4,6 +4,13 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+process.on('uncaughtException', (err) => {
+    console.error('Caught exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 let MsEdgeTTS, OUTPUT_FORMAT;
 try {
     const msedge = require('msedge-tts');
@@ -68,6 +75,17 @@ async function handleWelcome(name, res) {
             triggerPopup(safeName, audioFile);
             res.writeHead(200);
             res.end(JSON.stringify({status: "success", tts: "HsiaoChenNeural"}));
+            
+            setTimeout(() => {
+                try {
+                    if (fs.existsSync(audioFile)) {
+                        fs.unlinkSync(audioFile);
+                        console.log("Cleaned up old audio file:", audioFile);
+                    }
+                } catch(e) {
+                    console.error("Failed to clean up audio file:", e);
+                }
+            }, 60000);
         });
         audioStream.on('error', (err) => {
             console.error("TTS Stream Error:", err);
@@ -104,5 +122,5 @@ try {
 } catch(e) {}
 
 server.listen(8081, '0.0.0.0', () => {
-    console.log('Standalone Native Welcome API listening on port 8081');
+    console.log('Standalone Native Welcome API listening on port 8081 with Crash Protection');
 });
