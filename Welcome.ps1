@@ -22,9 +22,12 @@ if ($HideUI) {
         $wmp.URL = $AudioFile
         $wmp.controls.play()
         Start-Sleep -Seconds 1
-        while ($wmp.playState -eq 3) {
+        
+        # Keep process alive while playing (State 3 = Playing, 9 = Transitioning)
+        while ($wmp.playState -eq 3 -or $wmp.playState -eq 9 -or $wmp.playState -eq 10) {
             Start-Sleep -Milliseconds 500
         }
+        
         $wmp.close()
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wmp) | Out-Null
     }
