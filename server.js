@@ -22,20 +22,21 @@ try {
 
 const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
-    if (parsedUrl.pathname === '/welcome') {
-        let name = "家人";
+    
+    if (parsedUrl.pathname === '/welcome' || parsedUrl.pathname === '/speak') {
+        let text = "家人";
         if (req.method === 'GET') {
-            name = parsedUrl.query.name || "家人";
-            handleWelcome(name, res);
+            text = parsedUrl.query.name || parsedUrl.query.text || "家人";
+            handleSpeak(text, res, parsedUrl.pathname === '/welcome');
         } else if (req.method === 'POST') {
             let body = '';
             req.on('data', chunk => { body += chunk.toString(); });
             req.on('end', () => {
                 try {
                     const data = JSON.parse(body);
-                    name = data.name || "家人";
+                    text = data.name || data.text || "家人";
                 } catch(e) {}
-                handleWelcome(name, res);
+                handleSpeak(text, res, parsedUrl.pathname === '/welcome');
             });
         }
     } else {
@@ -44,25 +45,24 @@ const server = http.createServer((req, res) => {
     }
 });
 
-async function handleWelcome(name, res) {
-    let safeName = name.replace(/['"`$]/g, "").replace(/\(.*?\)/g, "").trim();
+async function handleSpeak(text, res, isWelcome) {
+    let safeText = text.replace(/['"`$]/g, "").replace(/\(.*?\)/g, "").trim();
     
     try {
-        if (!MsEdgeTTS) {
-            throw new Error("TTS Module not loaded");
-        }
+        if (!MsEdgeTTS) throw new Error("TTS Module not loaded");
         
         const tts = new MsEdgeTTS();
         await tts.getVoices(); 
-        
         await tts.setMetadata("zh-TW-HsiaoChenNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
         
-        let greetingBase64 = "5q2h6L+O5Zue5a62";
-        let greeting = Buffer.from(greetingBase64, 'base64').toString('utf8');
+        let textToSpeak = safeText;
+        if (isWelcome) {
+            let greetingBase64 = "5q2h6L+O5Zue5a62";
+            let greeting = Buffer.from(greetingBase64, 'base64').toString('utf8');
+            textToSpeak = safeText + " " + greeting;
+        }
         
-        const textToSpeak = safeName + " " + greeting;
         console.log("Generating audio for text: " + textToSpeak);
-        
         const { audioStream } = tts.toStream(textToSpeak);
         
         const chunks = [];
@@ -71,10 +71,10 @@ async function handleWelcome(name, res) {
             const timestamp = Date.now();
             const audioFile = "C:\\\\Users\\\\magic\\\\WelcomeAPI\\\\current_welcome_" + timestamp + ".mp3";
             fs.writeFileSync(audioFile, Buffer.concat(chunks));
-            console.log("Audio generated for:", safeName);
-            triggerPopup(safeName, audioFile);
+            console.log("Audio generated for:", safeText);
+            triggerPopup(isWelcome ? safeText : "", audioFile);
             res.writeHead(200);
-            res.end(JSON.stringify({status: "success", tts: "HsiaoChenNeural"}));
+            res.end(JSON.stringify({status: "success", text: textToSpeak}));
             
             setTimeout(() => {
                 try {
@@ -82,32 +82,37 @@ async function handleWelcome(name, res) {
                         fs.unlinkSync(audioFile);
                         console.log("Cleaned up old audio file:", audioFile);
                     }
-                } catch(e) {
-                    console.error("Failed to clean up audio file:", e);
-                }
+                } catch(e) {}
             }, 60000);
         });
         audioStream.on('error', (err) => {
             console.error("TTS Stream Error:", err);
-            triggerPopup(safeName, ""); 
+            triggerPopup("", ""); 
             res.writeHead(500);
             res.end(JSON.stringify({status: "error", message: "TTS stream failed"}));
         });
     } catch(err) {
         console.error("Edge TTS setup error:", err);
-        triggerPopup(safeName, ""); 
+        triggerPopup("", ""); 
         res.writeHead(500);
         res.end(JSON.stringify({status: "error", message: err.toString()}));
     }
 }
 
 function triggerPopup(name, audioFile) {
-    let b64Name = Buffer.from(name, 'utf8').toString('base64');
-    let scriptPath = "C:\\\\Users\\\\magic\\\\WelcomeAPI\\\\Welcome.ps1";
-    let cmd = `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "${scriptPath}" -Base64Name "${b64Name}" -AudioFile "${audioFile}"`;
+    let cmd;
+    if (name) {
+        let b64Name = Buffer.from(name, 'utf8').toString('base64');
+        let scriptPath = "C:\\\\Users\\\\magic\\\\WelcomeAPI\\\\Welcome.ps1";
+        cmd = `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "${scriptPath}" -Base64Name "${b64Name}" -AudioFile "${audioFile}"`;
+    } else {
+        // Just play audio without UI popup if it's not a welcome
+        let scriptPath = "C:\\\\Users\\\\magic\\\\WelcomeAPI\\\\Welcome.ps1";
+        cmd = `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "${scriptPath}" -AudioFile "${audioFile}" -HideUI`;
+    }
     
     exec(cmd, (error) => {
-        if (error) console.error("Error launching UI:", error);
+        if (error) console.error("Error launching UI/Audio:", error);
     });
 }
 
@@ -122,5 +127,5 @@ try {
 } catch(e) {}
 
 server.listen(8081, '0.0.0.0', () => {
-    console.log('Standalone Native Welcome API listening on port 8081 with Crash Protection');
+    console.log('Standalone Native Welcome/Chat API listening on port 8081 with Crash Protection');
 });

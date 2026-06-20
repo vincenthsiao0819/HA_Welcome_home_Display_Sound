@@ -1,14 +1,12 @@
 param(
     [string]$Base64Name = "",
-    [string]$AudioFile = ""
+    [string]$AudioFile = "",
+    [switch]$HideUI
 )
 
 Get-WmiObject Win32_Process -Filter "CommandLine LIKE '%Welcome.ps1%'" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { $_.Terminate() }
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-
-$PersonName = "家人"
+$PersonName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("5a625Lq6"))
 if ($Base64Name -ne "") {
     try {
         $PersonName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Name))
@@ -16,6 +14,25 @@ if ($Base64Name -ne "") {
 }
 
 $Greeting = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("5q2h6L+O5Zue5a62"))
+
+if ($HideUI) {
+    if ($AudioFile -ne "" -and (Test-Path $AudioFile)) {
+        $wmp = New-Object -ComObject WMPlayer.OCX
+        $wmp.settings.volume = 100
+        $wmp.URL = $AudioFile
+        $wmp.controls.play()
+        Start-Sleep -Seconds 1
+        while ($wmp.playState -eq 3) {
+            Start-Sleep -Milliseconds 500
+        }
+        $wmp.close()
+        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($wmp) | Out-Null
+    }
+    Exit
+}
+
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
 $form = New-Object Windows.Forms.Form
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
@@ -53,7 +70,6 @@ $form.add_FormClosed({
         try {
             $global:wmp.close()
             [System.Runtime.InteropServices.Marshal]::ReleaseComObject($global:wmp) | Out-Null
-            Remove-Item -Path $AudioFile -Force -ErrorAction SilentlyContinue
         } catch {}
     }
 })
