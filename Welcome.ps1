@@ -21,11 +21,15 @@ if ($HideUI) {
         $wmp.settings.volume = 100
         $wmp.URL = $AudioFile
         $wmp.controls.play()
-        Start-Sleep -Seconds 1
         
-        # Keep process alive while playing (State 3 = Playing, 9 = Transitioning)
-        while ($wmp.playState -eq 3 -or $wmp.playState -eq 9 -or $wmp.playState -eq 10) {
+        # Give it a tiny bit more time to buffer
+        Start-Sleep -Milliseconds 1500
+        
+        # 3=Playing, 9=Transitioning, 10=Ready, 6=Buffering, 1=Stopped
+        $timeout = 0
+        while (($wmp.playState -eq 3 -or $wmp.playState -eq 9 -or $wmp.playState -eq 6) -and $timeout -lt 60) {
             Start-Sleep -Milliseconds 500
+            $timeout++
         }
         
         $wmp.close()
