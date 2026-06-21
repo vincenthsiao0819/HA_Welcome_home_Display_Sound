@@ -20,25 +20,11 @@ try {
     console.error("Failed to load msedge-tts module:", e);
 }
 
-// 1. 改用 Map 來記錄「每個人」的最後歡迎時間（依人名獨立防抖）
 const lastWelcomeTimes = new Map();
-
-// 2. 加入「排隊播放機制」，確保多人回家不會互相砍畫面
-let popupQueue = [];
-let isPlayingPopup = false;
-
-function processQueue() {
-    if (isPlayingPopup || popupQueue.length === 0) return;
-    isPlayingPopup = true;
-    const task = popupQueue.shift();
-    
-    console.log("Executing popup from queue. Remaining tasks:", popupQueue.length);
-    exec(task.cmd, (error) => {
-        if (error) console.error("Error launching UI/Audio:", error);
-        isPlayingPopup = false;
-        setTimeout(processQueue, 500); // 等待半秒後播放下一個家人的歡迎
-    });
-}
+let pendingNames = new Set();
+let batchTimer = null;
+const BATCH_WINDOW_MS = 2500; // 2.5 seconds batch window
+const DEBOUNCE_MS = 10000; // 10 seconds debounce per person
 
 const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
@@ -47,7 +33,7 @@ const server = http.createServer((req, res) => {
         let text = "家人";
         if (req.method === 'GET') {
             text = parsedUrl.query.name || parsedUrl.query.text || "家人";
-            handleSpeak(text, res, parsedUrl.pathname === '/welcome');
+            handleRequest(text, res, parsedUrl.pathname === '/welcome');
         } else if (req.method === 'POST') {
             let body = '';
             req.on('data', chunk => { body += chunk.toString(); });
@@ -56,7 +42,7 @@ const server = http.createServer((req, res) => {
                     const data = JSON.parse(body);
                     let text = data.name || data.text || "家人";
                     let userText = data.userText || null;
-                    handleSpeak(text, res, parsedUrl.pathname === '/welcome', userText);
+                    handleRequest(text, res, parsedUrl.pathname === '/welcome', userText);
                 } catch(e) {}
             });
         }
@@ -66,21 +52,44 @@ const server = http.createServer((req, res) => {
     }
 });
 
-async function handleSpeak(text, res, isWelcome, userText = null) {
+function handleRequest(text, res, isWelcome, userText = null) {
     let safeText = text.replace(/['"`$]/g, "").replace(/\(.*?\)/g, "").trim();
     
     if (isWelcome) {
         const now = Date.now();
         const lastTime = lastWelcomeTimes.get(safeText) || 0;
-        if (now - lastTime < 5000) {
+        if (now - lastTime < DEBOUNCE_MS) {
             console.log("Debouncing duplicate welcome request for: " + safeText);
             res.writeHead(200);
             res.end(JSON.stringify({status: "ignored", message: "debounced"}));
             return;
         }
         lastWelcomeTimes.set(safeText, now);
+        pendingNames.add(safeText);
+        
+        res.writeHead(200);
+        res.end(JSON.stringify({status: "queued", text: safeText}));
+
+        if (!batchTimer) {
+            batchTimer = setTimeout(() => {
+                const namesArray = Array.from(pendingNames);
+                pendingNames.clear();
+                batchTimer = null;
+                
+                // Combine names with a pause comma
+                const combinedNames = namesArray.join("、");
+                executeSpeak(combinedNames, true, null);
+            }, BATCH_WINDOW_MS);
+        }
+    } else {
+        // Direct speak (for Chat/AI)
+        executeSpeak(safeText, false, userText);
+        res.writeHead(200);
+        res.end(JSON.stringify({status: "success", text: safeText}));
     }
-    
+}
+
+async function executeSpeak(safeText, isWelcome, userText) {
     try {
         if (!MsEdgeTTS) throw new Error("TTS Module not loaded");
         
@@ -90,7 +99,7 @@ async function handleSpeak(text, res, isWelcome, userText = null) {
         
         let textToSpeak = safeText;
         if (isWelcome) {
-            let greetingBase64 = "5q2h6L+O5Zue5a62";
+            let greetingBase64 = "5q2h6L+O5Zue5a62"; // "歡迎回家"
             let greeting = Buffer.from(greetingBase64, 'base64').toString('utf8');
             textToSpeak = safeText + " " + greeting;
         }
@@ -110,8 +119,6 @@ async function handleSpeak(text, res, isWelcome, userText = null) {
                 displayText = "🗣️ You: " + userText + "\n\n🦞 Lobster: " + textToSpeak;
             }
             triggerPopup(isWelcome, displayText, audioFile);
-            res.writeHead(200);
-            res.end(JSON.stringify({status: "success", text: textToSpeak}));
             
             setTimeout(() => {
                 try {
@@ -124,13 +131,9 @@ async function handleSpeak(text, res, isWelcome, userText = null) {
         });
         audioStream.on('error', (err) => {
             console.error("TTS Stream Error:", err);
-            res.writeHead(500);
-            res.end(JSON.stringify({status: "error", message: "TTS stream failed"}));
         });
     } catch(err) {
         console.error("Edge TTS setup error:", err);
-        res.writeHead(500);
-        res.end(JSON.stringify({status: "error", message: err.toString()}));
     }
 }
 
@@ -146,9 +149,9 @@ function triggerPopup(isWelcome, text, audioFile) {
         cmd = `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "${scriptPath}" -Base64Text "${b64Text}" -AudioFile "${audioFile}"`;
     }
     
-    // 把指令丟進 Queue，讓 processQueue 去排隊執行
-    popupQueue.push({cmd});
-    processQueue();
+    exec(cmd, (error) => {
+        if (error) console.error("Error launching UI/Audio:", error);
+    });
 }
 
 try {
@@ -162,5 +165,5 @@ try {
 } catch(e) {}
 
 server.listen(8081, '0.0.0.0', () => {
-    console.log('Standalone Native Welcome/Chat API listening on port 8081 with Queue & Crash Protection');
+    console.log('Standalone Native Welcome/Chat API listening on port 8081 with Batching & Crash Protection');
 });
