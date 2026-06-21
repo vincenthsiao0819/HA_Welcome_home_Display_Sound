@@ -20,7 +20,25 @@ try {
     console.error("Failed to load msedge-tts module:", e);
 }
 
-let lastWelcomeTime = 0;
+// 1. 改用 Map 來記錄「每個人」的最後歡迎時間（依人名獨立防抖）
+const lastWelcomeTimes = new Map();
+
+// 2. 加入「排隊播放機制」，確保多人回家不會互相砍畫面
+let popupQueue = [];
+let isPlayingPopup = false;
+
+function processQueue() {
+    if (isPlayingPopup || popupQueue.length === 0) return;
+    isPlayingPopup = true;
+    const task = popupQueue.shift();
+    
+    console.log("Executing popup from queue. Remaining tasks:", popupQueue.length);
+    exec(task.cmd, (error) => {
+        if (error) console.error("Error launching UI/Audio:", error);
+        isPlayingPopup = false;
+        setTimeout(processQueue, 500); // 等待半秒後播放下一個家人的歡迎
+    });
+}
 
 const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
@@ -52,13 +70,15 @@ async function handleSpeak(text, res, isWelcome, userText = null) {
     let safeText = text.replace(/['"`$]/g, "").replace(/\(.*?\)/g, "").trim();
     
     if (isWelcome) {
-        if (Date.now() - lastWelcomeTime < 5000) {
+        const now = Date.now();
+        const lastTime = lastWelcomeTimes.get(safeText) || 0;
+        if (now - lastTime < 5000) {
             console.log("Debouncing duplicate welcome request for: " + safeText);
             res.writeHead(200);
             res.end(JSON.stringify({status: "ignored", message: "debounced"}));
             return;
         }
-        lastWelcomeTime = Date.now();
+        lastWelcomeTimes.set(safeText, now);
     }
     
     try {
@@ -126,9 +146,9 @@ function triggerPopup(isWelcome, text, audioFile) {
         cmd = `powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File "${scriptPath}" -Base64Text "${b64Text}" -AudioFile "${audioFile}"`;
     }
     
-    exec(cmd, (error) => {
-        if (error) console.error("Error launching UI/Audio:", error);
-    });
+    // 把指令丟進 Queue，讓 processQueue 去排隊執行
+    popupQueue.push({cmd});
+    processQueue();
 }
 
 try {
@@ -142,5 +162,5 @@ try {
 } catch(e) {}
 
 server.listen(8081, '0.0.0.0', () => {
-    console.log('Standalone Native Welcome/Chat API listening on port 8081 with Crash Protection');
+    console.log('Standalone Native Welcome/Chat API listening on port 8081 with Queue & Crash Protection');
 });
