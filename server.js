@@ -20,6 +20,8 @@ try {
     console.error("Failed to load msedge-tts module:", e);
 }
 
+let lastWelcomeTime = 0;
+
 const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
     
@@ -49,6 +51,16 @@ const server = http.createServer((req, res) => {
 async function handleSpeak(text, res, isWelcome, userText = null) {
     let safeText = text.replace(/['"`$]/g, "").replace(/\(.*?\)/g, "").trim();
     
+    if (isWelcome) {
+        if (Date.now() - lastWelcomeTime < 5000) {
+            console.log("Debouncing duplicate welcome request for: " + safeText);
+            res.writeHead(200);
+            res.end(JSON.stringify({status: "ignored", message: "debounced"}));
+            return;
+        }
+        lastWelcomeTime = Date.now();
+    }
+    
     try {
         if (!MsEdgeTTS) throw new Error("TTS Module not loaded");
         
@@ -75,7 +87,7 @@ async function handleSpeak(text, res, isWelcome, userText = null) {
             console.log("Audio generated for:", safeText);
             let displayText = isWelcome ? safeText : textToSpeak;
             if (!isWelcome && userText) {
-                displayText = "👤 You: " + userText + "\n\n🦞 Lobster: " + textToSpeak;
+                displayText = "🗣️ You: " + userText + "\n\n🦞 Lobster: " + textToSpeak;
             }
             triggerPopup(isWelcome, displayText, audioFile);
             res.writeHead(200);
