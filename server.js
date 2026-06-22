@@ -24,7 +24,7 @@ const lastWelcomeTimes = new Map();
 let pendingNames = new Set();
 let batchTimer = null;
 const BATCH_WINDOW_MS = 2500; // 2.5 seconds batch window
-const DEBOUNCE_MS = 10000; // 10 seconds debounce per person
+const DEBOUNCE_MS = 300000; // 5 minutes debounce per person
 
 const server = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
@@ -57,18 +57,31 @@ function handleRequest(text, res, isWelcome, userText = null) {
     
     if (isWelcome) {
         const now = Date.now();
-        const lastTime = lastWelcomeTimes.get(safeText) || 0;
-        if (now - lastTime < DEBOUNCE_MS) {
+        const incomingNames = safeText.split(/[\s、,]+/);
+        const newNames = [];
+        
+        for (const name of incomingNames) {
+            if (!name) continue;
+            const lastTime = lastWelcomeTimes.get(name) || 0;
+            if (now - lastTime >= DEBOUNCE_MS) {
+                newNames.push(name);
+                lastWelcomeTimes.set(name, now);
+            }
+        }
+        
+        if (newNames.length === 0) {
             console.log("Debouncing duplicate welcome request for: " + safeText);
             res.writeHead(200);
             res.end(JSON.stringify({status: "ignored", message: "debounced"}));
             return;
         }
-        lastWelcomeTimes.set(safeText, now);
-        pendingNames.add(safeText);
+        
+        for (const name of newNames) {
+            pendingNames.add(name);
+        }
         
         res.writeHead(200);
-        res.end(JSON.stringify({status: "queued", text: safeText}));
+        res.end(JSON.stringify({status: "queued", text: newNames.join("、")}));
 
         if (!batchTimer) {
             batchTimer = setTimeout(() => {
