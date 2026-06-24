@@ -8,15 +8,13 @@ Get-WmiObject Win32_Process -Filter "CommandLine LIKE '%Welcome.ps1%'" | Where-O
 
 $PersonName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("5a625Lq6"))
 if ($Base64Name -ne "") {
-    try {
-        $PersonName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Name))
-    } catch {}
+    try { $PersonName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Name)) } catch {}
 }
-
 $Greeting = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("5q2h6L+O5Zue5a62"))
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationCore
 
 $form = New-Object Windows.Forms.Form
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
@@ -44,42 +42,39 @@ if ($HideUI) {
     $form.Controls.Add($label)
 }
 
-$global:startedPlaying = $false
+$safetyTimer = New-Object Windows.Forms.Timer
+$safetyTimer.Interval = 20000
+$safetyTimer.add_Tick({ $form.Close() })
+
 $pollTimer = New-Object Windows.Forms.Timer
-$pollTimer.Interval = 500
+$pollTimer.Interval = 150
 $pollTimer.add_Tick({
-    if ($global:wmp) {
-        $state = $global:wmp.playState
-        if ($state -eq 3) { $global:startedPlaying = $true }
-        if ($global:startedPlaying -and $state -eq 1) { 
-            $form.Close() 
+    if ($global:player -and $global:player.NaturalDuration.HasTimeSpan) {
+        if ($global:player.Position -ge $global:player.NaturalDuration.TimeSpan) {
+            $pollTimer.Stop()
+            $form.Close()
         }
     }
 })
 
-$safetyTimer = New-Object Windows.Forms.Timer
-$safetyTimer.Interval = 60000
-$safetyTimer.add_Tick({ $form.Close() })
-
 $form.add_Shown({
     $safetyTimer.Start()
     if ($AudioFile -ne "" -and (Test-Path $AudioFile)) {
-        $global:wmp = New-Object -ComObject WMPlayer.OCX
-        $global:wmp.settings.volume = 100
-        $global:wmp.URL = $AudioFile
-        $global:wmp.controls.play()
+        $global:player = New-Object System.Windows.Media.MediaPlayer
+        $global:player.Volume = 1.0
+        $global:player.Open([uri]$AudioFile)
+        $global:player.Play()
         $pollTimer.Start()
     } else {
-        # If no audio file, just close after 3 seconds for UI, or immediately for HideUI
         if ($HideUI) { $form.Close() } else { Start-Sleep -Seconds 3; $form.Close() }
     }
 })
 
 $form.add_FormClosed({
-    if ($global:wmp) {
+    if ($global:player) {
         try {
-            $global:wmp.close()
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($global:wmp) | Out-Null
+            $global:player.Stop()
+            $global:player.Close()
         } catch {}
     }
 })

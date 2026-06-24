@@ -32,36 +32,33 @@ if ($decodedText) {
     $label.Font = New-Object System.Drawing.Font("Microsoft JhengHei", 60, [System.Drawing.FontStyle]::Bold)
     $label.Dock = [System.Windows.Forms.DockStyle]::Fill
     $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    # 允許自動折行
     $label.AutoSize = $false
     $form.Controls.Add($label)
 }
 
-$global:startedPlaying = $false
+$safetyTimer = New-Object Windows.Forms.Timer
+$safetyTimer.Interval = 35000
+$safetyTimer.add_Tick({ $form.Close() })
+
 $pollTimer = New-Object Windows.Forms.Timer
-$pollTimer.Interval = 500
+$pollTimer.Interval = 150
 $pollTimer.add_Tick({
-    if ($global:wmp) {
-        $state = $global:wmp.playState
-        if ($state -eq 3) { $global:startedPlaying = $true }
-        if ($global:startedPlaying -and $state -eq 1) { 
-            Start-Sleep -Seconds 3
-            $form.Close() 
+    if ($global:player -and $global:player.NaturalDuration.HasTimeSpan) {
+        if ($global:player.Position -ge $global:player.NaturalDuration.TimeSpan) {
+            $pollTimer.Stop()
+            Start-Sleep -Seconds 2
+            $form.Close()
         }
     }
 })
 
-$safetyTimer = New-Object Windows.Forms.Timer
-$safetyTimer.Interval = 30000 
-$safetyTimer.add_Tick({ $form.Close() })
-
 $form.add_Shown({
     $safetyTimer.Start()
     if ($AudioFile -ne "" -and (Test-Path $AudioFile)) {
-        $global:wmp = New-Object -ComObject WMPlayer.OCX
-        $global:wmp.settings.volume = 100
-        $global:wmp.URL = $AudioFile
-        $global:wmp.controls.play()
+        $global:player = New-Object System.Windows.Media.MediaPlayer
+        $global:player.Volume = 1.0
+        $global:player.Open([uri]$AudioFile)
+        $global:player.Play()
         $pollTimer.Start()
     } else {
         Start-Sleep -Seconds 10
@@ -70,10 +67,10 @@ $form.add_Shown({
 })
 
 $form.add_FormClosed({
-    if ($global:wmp) {
+    if ($global:player) {
         try {
-            $global:wmp.close()
-            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($global:wmp) | Out-Null
+            $global:player.Stop()
+            $global:player.Close()
         } catch {}
     }
 })
