@@ -3,7 +3,7 @@ param(
     [string]$AudioFile = ""
 )
 
-Get-WmiObject Win32_Process -Filter "CommandLine LIKE '%Welcome_Chat.ps1%'" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { $_.Terminate() }
+Get-WmiObject Win32_Process -Filter "Name='powershell.exe' AND CommandLine LIKE '%Welcome_Chat.ps1%'" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { $_.Terminate() }
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
