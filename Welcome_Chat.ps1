@@ -9,7 +9,6 @@ $decodedText = ""
 if ($Base64Text) {
     try {
         $decodedText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Text))
-        # Escape for XML
         $decodedText = $decodedText.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("'", "&apos;").Replace('"', "&quot;")
         $decodedText = $decodedText.Replace([Environment]::NewLine, "&#x0a;").Replace("`n", "&#x0a;")
     } catch {}
@@ -17,6 +16,9 @@ if ($Base64Text) {
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName System.Windows.Forms
+
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -36,6 +38,17 @@ Add-Type -AssemblyName PresentationCore
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $win = [Windows.Markup.XamlReader]::Load($reader)
 
+$win.WindowState = "Normal"
+$win.Left = $bounds.X
+$win.Top = $bounds.Y
+$win.Width = $bounds.Width
+$win.Height = $bounds.Height
+
+if ($bounds.Width -le 1024) {
+    $win.Width = 3840
+    $win.Height = 3840
+}
+
 $safetyTimer = New-Object System.Windows.Threading.DispatcherTimer
 $safetyTimer.Interval = [TimeSpan]::FromSeconds(35)
 $safetyTimer.Add_Tick({ $win.Close() })
@@ -46,8 +59,6 @@ $pollTimer.Add_Tick({
     if ($global:player -and $global:player.NaturalDuration.HasTimeSpan) {
         if ($global:player.Position -ge $global:player.NaturalDuration.TimeSpan) {
             $pollTimer.Stop()
-            
-            # 2 second delay before closing
             $closeTimer = New-Object System.Windows.Threading.DispatcherTimer
             $closeTimer.Interval = [TimeSpan]::FromSeconds(2)
             $closeTimer.Add_Tick({ $win.Close(); $closeTimer.Stop() })

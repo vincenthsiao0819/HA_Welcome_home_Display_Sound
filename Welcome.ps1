@@ -15,6 +15,9 @@ $FullText = $PersonName + "&#x0a;" + $Greeting
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName System.Windows.Forms
+
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 
 if ($HideUI) {
     $Opacity = "0"
@@ -25,9 +28,12 @@ if ($HideUI) {
     $Top = "-2000"
 } else {
     $Opacity = "0.85"
-    $WinState = "Maximized"
-    $Width = "Auto"
-    $Height = "Auto"
+    $WinState = "Normal"
+    # Hardcode for 27-inch portrait 1080x1920 (or 2160x3840)
+    # If the system applies 150% scaling, 1080x1920 logical is what we want.
+    # To be absolutely sure, we use the raw primary screen bounds or a massive number that will just bleed off screen
+    $Width = "3840"
+    $Height = "3840"
     $Left = "0"
     $Top = "0"
 }
@@ -35,9 +41,9 @@ if ($HideUI) {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Welcome" WindowStyle="None" WindowState="$WinState" 
+        Title="Welcome" WindowStyle="None" WindowState="Maximized" 
         Topmost="True" Background="Black" AllowsTransparency="True" Opacity="$Opacity"
-        ShowInTaskbar="False" Width="$Width" Height="$Height" Left="$Left" Top="$Top">
+        ShowInTaskbar="False">
     <Grid>
         <TextBlock Text="$FullText" Foreground="White" FontSize="120" FontWeight="Bold" FontFamily="Microsoft JhengHei"
                    HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"/>
@@ -47,6 +53,19 @@ if ($HideUI) {
 
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $win = [Windows.Markup.XamlReader]::Load($reader)
+
+# Let's use the exact screen bounds from WinForms in WPF
+$win.WindowState = "Normal"
+$win.Left = $bounds.X
+$win.Top = $bounds.Y
+$win.Width = $bounds.Width
+$win.Height = $bounds.Height
+
+# If the bounds returned 1024x768 (Session 0 fallback), override to at least 1080x1920
+if ($bounds.Width -le 1024) {
+    $win.Width = 3840
+    $win.Height = 3840
+}
 
 $safetyTimer = New-Object System.Windows.Threading.DispatcherTimer
 $safetyTimer.Interval = [TimeSpan]::FromSeconds(20)
@@ -73,7 +92,6 @@ $win.Add_Loaded({
         $pollTimer.Start()
     } else {
         if ($HideUI) { $win.Close() } else { 
-            # Dispatcher timer for 3s close instead of sleep
             $closeTimer = New-Object System.Windows.Threading.DispatcherTimer
             $closeTimer.Interval = [TimeSpan]::FromSeconds(3)
             $closeTimer.Add_Tick({ $win.Close(); $closeTimer.Stop() })
