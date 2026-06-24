@@ -114,7 +114,7 @@ async function executeSpeak(safeText, isWelcome, userText) {
         if (isWelcome) {
             let greetingBase64 = "5q2h6L+O5Zue5a62"; // "歡迎回家"
             let greeting = Buffer.from(greetingBase64, 'base64').toString('utf8');
-            textToSpeak = safeText + " " + greeting;
+            textToSpeak = safeText + "... " + greeting;
         }
         
         console.log("Generating audio for text: " + textToSpeak);
