@@ -27,11 +27,13 @@ if ($HideUI) {
     $form.StartPosition = 'Manual'
     $form.Location = New-Object System.Drawing.Point(-2000, -2000)
 } else {
-    $form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
     $form.Opacity = 0.85
     $form.TopMost = $true
     $form.ShowInTaskbar = $false
-    $form.StartPosition = 'CenterScreen'
+    $form.StartPosition = 'Manual'
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $form.SetBounds($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
     
     $label = New-Object Windows.Forms.Label
     $label.Text = $PersonName + [Environment]::NewLine + $Greeting

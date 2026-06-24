@@ -22,8 +22,10 @@ $form.BackColor = [System.Drawing.Color]::Black
 $form.Opacity = 0.85
 $form.TopMost = $true
 $form.ShowInTaskbar = $false
-$form.StartPosition = 'CenterScreen'
-$form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized
+$form.StartPosition = 'Manual'
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$form.SetBounds($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
+$form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
 
 if ($decodedText) {
     $label = New-Object Windows.Forms.Label
