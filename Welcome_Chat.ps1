@@ -5,56 +5,58 @@ param(
 
 Get-WmiObject Win32_Process -Filter "Name='powershell.exe' AND CommandLine LIKE '%Welcome_Chat.ps1%'" | Where-Object { $_.ProcessId -ne $PID } | ForEach-Object { $_.Terminate() }
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName PresentationCore
-
 $decodedText = ""
 if ($Base64Text) {
     try {
         $decodedText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64Text))
+        # Escape for XML
+        $decodedText = $decodedText.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("'", "&apos;").Replace('"', "&quot;")
+        $decodedText = $decodedText.Replace([Environment]::NewLine, "&#x0a;").Replace("`n", "&#x0a;")
     } catch {}
 }
 
-$form = New-Object Windows.Forms.Form
-$form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-$form.BackColor = [System.Drawing.Color]::Black
-$form.Opacity = 0.85
-$form.TopMost = $true
-$form.ShowInTaskbar = $false
-$form.StartPosition = 'Manual'
-$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-$form.SetBounds($bounds.X, $bounds.Y, $bounds.Width, $bounds.Height)
-$form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
 
-if ($decodedText) {
-    $label = New-Object Windows.Forms.Label
-    $label.Text = $decodedText
-    $label.ForeColor = [System.Drawing.Color]::White
-    $label.Font = New-Object System.Drawing.Font("Microsoft JhengHei", 60, [System.Drawing.FontStyle]::Bold)
-    $label.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $label.AutoSize = $false
-    $form.Controls.Add($label)
-}
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WelcomeChat" WindowStyle="None" WindowState="Maximized" 
+        Topmost="True" Background="Black" AllowsTransparency="True" Opacity="0.85"
+        ShowInTaskbar="False">
+    <Grid>
+        <TextBlock Foreground="White" FontSize="60" FontWeight="Bold" FontFamily="Microsoft JhengHei"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center">
+            $decodedText
+        </TextBlock>
+    </Grid>
+</Window>
+"@
 
-$safetyTimer = New-Object Windows.Forms.Timer
-$safetyTimer.Interval = 35000
-$safetyTimer.add_Tick({ $form.Close() })
+$reader = (New-Object System.Xml.XmlNodeReader $xaml)
+$win = [Windows.Markup.XamlReader]::Load($reader)
 
-$pollTimer = New-Object Windows.Forms.Timer
-$pollTimer.Interval = 150
-$pollTimer.add_Tick({
+$safetyTimer = New-Object System.Windows.Threading.DispatcherTimer
+$safetyTimer.Interval = [TimeSpan]::FromSeconds(35)
+$safetyTimer.Add_Tick({ $win.Close() })
+
+$pollTimer = New-Object System.Windows.Threading.DispatcherTimer
+$pollTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+$pollTimer.Add_Tick({
     if ($global:player -and $global:player.NaturalDuration.HasTimeSpan) {
         if ($global:player.Position -ge $global:player.NaturalDuration.TimeSpan) {
             $pollTimer.Stop()
-            Start-Sleep -Seconds 2
-            $form.Close()
+            
+            # 2 second delay before closing
+            $closeTimer = New-Object System.Windows.Threading.DispatcherTimer
+            $closeTimer.Interval = [TimeSpan]::FromSeconds(2)
+            $closeTimer.Add_Tick({ $win.Close(); $closeTimer.Stop() })
+            $closeTimer.Start()
         }
     }
 })
 
-$form.add_Shown({
+$win.Add_Loaded({
     $safetyTimer.Start()
     if ($AudioFile -ne "" -and (Test-Path $AudioFile)) {
         $global:player = New-Object System.Windows.Media.MediaPlayer
@@ -63,12 +65,14 @@ $form.add_Shown({
         $global:player.Play()
         $pollTimer.Start()
     } else {
-        Start-Sleep -Seconds 10
-        $form.Close()
+        $closeTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $closeTimer.Interval = [TimeSpan]::FromSeconds(10)
+        $closeTimer.Add_Tick({ $win.Close(); $closeTimer.Stop() })
+        $closeTimer.Start()
     }
 })
 
-$form.add_FormClosed({
+$win.Add_Closed({
     if ($global:player) {
         try {
             $global:player.Stop()
@@ -77,4 +81,5 @@ $form.add_FormClosed({
     }
 })
 
-[System.Windows.Forms.Application]::Run($form)
+$app = New-Object System.Windows.Application
+$app.Run($win) | Out-Null
