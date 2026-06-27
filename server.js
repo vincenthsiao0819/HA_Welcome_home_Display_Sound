@@ -23,7 +23,7 @@ try {
 const lastWelcomeTimes = new Map();
 let pendingNames = new Set();
 let batchTimer = null;
-const BATCH_WINDOW_MS = 1000; // 1 second batch window
+const BATCH_WINDOW_MS = 200; // 1 second batch window
 const DEBOUNCE_MS = 300000; // 5 minutes debounce per person
 
 const server = http.createServer((req, res) => {
